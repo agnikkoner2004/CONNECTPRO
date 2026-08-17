@@ -1,0 +1,58 @@
+POST http://localhost:5000/users/register HTTP/1.1
+Content-Type: application/json
+
+{
+  "name": "Agnik",
+  "userName": "agnik",
+  "email": "agnik@example.com",
+  "password": "mypassword123"
+}
+
+###
+
+POST http://localhost:5000/users/login HTTP/1.1
+Content-Type: application/json
+
+{
+  "email": "agnik@example.com",
+  "password": "mypassword123"
+}
+
+###
+
+POST  http://localhost:5000/users/get_user_and_profile HTTP/1.1
+Content-Type: application/json
+
+{
+  "token": "f1c74bc8698dd6ba5a58cb2197a0186b0860f8d88a673bc6d0226a5ecb0c8776"
+}
+
+###
+POST http://localhost:5000/users/update_profile_data
+Content-Type: application/json
+
+{
+  "token": "f1c74bc8698dd6ba5a58cb2197a0186b0860f8d88a673bc6d0226a5ecb0c8776",
+  "bio": "Hello, I am Agnik!",
+  "currentPost": "HR",
+  "experience": [
+    {
+      "company": "Microsoft",
+      "position": "Software Engineer",
+      "years": 3
+    }
+  ],
+  "education": [
+    {
+      "school": "HHH",
+      "degree": "B.Tech",
+      "fieldOfStudy": "Computer Science"
+    }
+  ]
+}
+
+###
+GET http://localhost:5000/users/get_all_user_profiles HTTP/1.1
+
+
+
