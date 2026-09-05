@@ -15,6 +15,8 @@ import {
   whatAreMyConnections,
   acceptConnectionRequest,
   getConnectionSuggestions,
+  getJobPreferences,
+  updateJobPreferences,
 } from "../controllers/user.controllers.js";
 
 const router = Router();
@@ -47,6 +49,9 @@ router.route("/user/get_user_and_profile").get(getUserAndProfile);
 
 // POST /api/users/update_profile_data
 router.route("/update_profile_data").post(updateProfileData);
+
+router.route("/job_preferences").get(getJobPreferences);
+router.route("/job_preferences").post(updateJobPreferences);
 
 router.route("/user/get_all_users").get(getAllUserProfile);
 

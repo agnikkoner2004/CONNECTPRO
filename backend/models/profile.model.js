@@ -55,6 +55,37 @@ const projectSchema = new mongoose.Schema({
   techStack: [String],
 });
 
+const jobPreferencesSchema = new mongoose.Schema(
+  {
+    preferredRoles: {
+      type: [String],
+      default: [],
+    },
+
+    preferredLocations: {
+      type: [String],
+      default: [],
+    },
+
+    skills: {
+      type: [String],
+      default: [],
+    },
+
+    workMode: {
+      type: String,
+      enum: ["", "On-site", "Hybrid", "Remote"],
+      default: "",
+    },
+
+    expectedSalary: {
+      type: String,
+      default: "",
+    },
+  },
+  { _id: false },
+);
+
 const profileSchema = new mongoose.Schema(
   {
     userId: {
@@ -138,10 +169,15 @@ const profileSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+
+    jobPreferences: {
+      type: jobPreferencesSchema,
+      default: () => ({}),
+    },
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 export default mongoose.models.Profile ||

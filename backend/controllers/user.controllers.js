@@ -2,53 +2,36 @@ import Profile from "../models/profile.model.js";
 import User from "../models/user.model.js";
 import ConnectionRequest from "../models/connections.model.js";
 import bcrypt from "bcrypt";
-import crypto from "crypto";
 import PDFDocument from "pdfkit";
-import fs from "fs";
-
-const convertUserDataToPDF = async (userData) => {
-  const doc = new PDFDocument();
-
-  const outputPath = crypto.randomBytes(32).toString("hex") + ".pdf";
-  const stream = fs.createWriteStream("uploads/" + outputPath);
-  doc.pipe(stream);
-  doc.image("uploads/${userData.profilePicture}", {
-    fit: [100, 100],
-    align: "center",
-    valign: "center",
-  });
-  doc.fontSize(14).text("Name: ${userData.userId.name}");
-  doc.fontSize(14).text("Username: ${userData.userId.userName}");
-  doc.fontSize(14).text("Email: ${userData.userId.email}");
-  doc.fontSize(14).text("Bio: ${userData.bio}");
-  doc.fontSize(14).text("Current Position: ${userData.currentPosition}");
-
-  doc.fontSize(14).text("Experience:");
-  userData.experience.forEach((exp, index) => {
-    doc.fontSize(14).text("Company Name: ${exp.companyName}");
-    doc.fontSize(14).text("Role: ${exp.role}");
-    doc.fontSize(14).text("Duration: ${exp.years}");
-  });
-  doc.end();
-
-  return outputPath;
-};
+import crypto from "crypto";
 
 export const register = async (req, res) => {
   try {
-    // Accept either `userName` (existing backend) or `username` (frontend)
-    const { name, userName, username, email, password } = req.body;
+    const { name, userName, username, email, password, accountType } = req.body;
+
     const finalUsername = userName || username || null;
 
     // Validate required fields
     if (!name || !finalUsername || !email || !password) {
-      return res.status(400).json({ message: "All fields are required" });
+      return res.status(400).json({
+        message: "All fields are required",
+      });
+    }
+
+    // Validate account type
+    if (!["user", "recruiter"].includes(accountType)) {
+      return res.status(400).json({
+        message: "Please select a valid account type",
+      });
     }
 
     // Check if user already exists
     const existingUser = await User.findOne({ email });
+
     if (existingUser) {
-      return res.status(400).json({ message: "User already exists" });
+      return res.status(400).json({
+        message: "User already exists",
+      });
     }
 
     // Hash password
@@ -57,28 +40,40 @@ export const register = async (req, res) => {
     // Create new user
     const newUser = new User({
       name,
-      userName: finalUsername, // store under schema field
+      userName: finalUsername,
       email,
       password: hashedPassword,
+      accountType,
+      token: crypto.randomBytes(32).toString("hex"),
     });
+
     await newUser.save();
 
     // Create profile linked to user
-    const profile = new Profile({ userId: newUser._id });
+    const profile = new Profile({
+      userId: newUser._id,
+    });
+
     await profile.save();
 
     return res.status(201).json({
       message: "User registered successfully",
+      token: newUser.token,
       user: {
         _id: newUser._id,
         username: newUser.userName,
         name: newUser.name,
         email: newUser.email,
+        accountType: newUser.accountType,
+        profilePicture: newUser.profilePicture,
       },
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error registering user" });
+    console.error("Register error:", error);
+
+    return res.status(500).json({
+      message: "Error registering user",
+    });
   }
 };
 
@@ -114,6 +109,7 @@ export const login = async (req, res) => {
         name: user.name,
         email: user.email,
         profilePicture: user.profilePicture,
+        accountType: user.accountType,
       },
     });
   } catch (error) {
@@ -215,29 +211,51 @@ export const updatePassword = async (req, res) => {
 
 export const getUserAndProfile = async (req, res) => {
   try {
-    const { token } = req.query; // since you're using POST
-    const user = await User.findOne({ token });
+    const { token, userId } = req.query;
 
-    if (!user) {
-      return res.status(400).json({ message: "User not found" });
+    const requestingUser = await User.findOne({ token });
+
+    if (!requestingUser) {
+      return res.status(400).json({
+        message: "User not found",
+      });
     }
 
-    const profile = await Profile.findOne({ userId: user._id });
+    const user = userId ? await User.findById(userId) : requestingUser;
 
-    res.status(200).json({
+    if (!user) {
+      return res.status(404).json({
+        message: "Profile user not found",
+      });
+    }
+
+    const profile = await Profile.findOne({
+      userId: user._id,
+    });
+
+    return res.status(200).json({
       message: "User fetched successfully",
+      isOwnProfile: requestingUser._id.equals(user._id),
+
       user: {
         _id: user._id,
         name: user.name,
         username: user.userName,
         email: user.email,
         profilePicture: user.profilePicture,
+
+        // ⭐ Important for Job Seeker / Recruiter
+        accountType: user.accountType,
       },
+
       profile,
     });
   } catch (error) {
-    console.error("getUserAndProfile error:", error); // <-- log the real error
-    res.status(500).json({ message: "Error fetching user and profile" });
+    console.error("getUserAndProfile error:", error);
+
+    return res.status(500).json({
+      message: "Error fetching user and profile",
+    });
   }
 };
 
@@ -273,6 +291,98 @@ export const updateProfileData = async (req, res) => {
   }
 };
 
+const normalizePreferenceList = (values) => {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  return values.map((value) => String(value).trim()).filter(Boolean);
+};
+
+export const getJobPreferences = async (req, res) => {
+  const { token } = req.query;
+
+  try {
+    const user = await User.findOne({ token });
+
+    if (!user) {
+      return res.status(400).json({ message: "User not found" });
+    }
+
+    if (user.accountType !== "user") {
+      return res
+        .status(403)
+        .json({ message: "Only job seekers can access job preferences" });
+    }
+
+    const profile = await Profile.findOne({ userId: user._id });
+
+    return res.json({
+      preferences: profile?.jobPreferences || {
+        preferredRoles: [],
+        preferredLocations: [],
+        skills: [],
+        workMode: "",
+        expectedSalary: "",
+      },
+    });
+  } catch (error) {
+    console.error("getJobPreferences error:", error);
+    return res.status(500).json({ message: "Error fetching job preferences" });
+  }
+};
+
+export const updateJobPreferences = async (req, res) => {
+  const { token, jobPreferences = {} } = req.body;
+  const validWorkModes = ["", "On-site", "Hybrid", "Remote"];
+
+  try {
+    const user = await User.findOne({ token });
+
+    if (!user) {
+      return res.status(400).json({ message: "User not found" });
+    }
+
+    if (user.accountType !== "user") {
+      return res
+        .status(403)
+        .json({ message: "Only job seekers can update job preferences" });
+    }
+
+    if (!validWorkModes.includes(jobPreferences.workMode || "")) {
+      return res.status(400).json({ message: "Invalid work mode" });
+    }
+
+    const preferences = {
+      preferredRoles: normalizePreferenceList(jobPreferences.preferredRoles),
+      preferredLocations: normalizePreferenceList(
+        jobPreferences.preferredLocations,
+      ),
+      skills: normalizePreferenceList(jobPreferences.skills),
+      workMode: jobPreferences.workMode || "",
+      expectedSalary: String(jobPreferences.expectedSalary || "").trim(),
+    };
+
+    let profile = await Profile.findOne({ userId: user._id });
+
+    if (!profile) {
+      profile = new Profile({ userId: user._id, jobPreferences: preferences });
+    } else {
+      profile.jobPreferences = preferences;
+    }
+
+    await profile.save();
+
+    return res.json({
+      message: "Job preferences saved successfully",
+      preferences: profile.jobPreferences,
+    });
+  } catch (error) {
+    console.error("updateJobPreferences error:", error);
+    return res.status(500).json({ message: "Error saving job preferences" });
+  }
+};
+
 export const getAllUserProfile = async (req, res) => {
   try {
     const profiles = await Profile.find().populate(
@@ -286,19 +396,84 @@ export const getAllUserProfile = async (req, res) => {
 };
 
 export const downloadResume = async (req, res) => {
-  const userId = req.query.userId; // Assuming userId is passed as a query parameter
+  try {
+    const user = await User.findOne({ token: req.query.token });
+    if (!user) {
+      return res.status(401).json({ message: "Please log in first" });
+    }
 
-  const userProfile = await Profile.findOne({ userId }).populate(
-    "userId",
-    "userName email profilePicture",
-  );
+    const profile = await Profile.findOne({ userId: user._id });
+    if (!profile) {
+      return res.status(404).json({ message: "Profile not found" });
+    }
 
-  let outputPath = await convertUserProfileToPDF(userProfile);
+    const doc = new PDFDocument({ margin: 50 });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${user.userName || "connectpro"}-resume.pdf"`,
+    );
+    doc.pipe(res);
 
-  return res.json({
-    message: "Resume generated successfully",
-    resumePath: outputPath,
-  });
+    doc.fontSize(24).text(user.name || "ConnectPro Member");
+    doc
+      .fontSize(11)
+      .fillColor("#555")
+      .text(user.email || "");
+    doc.moveDown();
+
+    const addSection = (title, content) => {
+      if (!content) return;
+      doc.fillColor("#111").fontSize(15).text(title);
+      doc.fontSize(11).fillColor("#333").text(content);
+      doc.moveDown();
+    };
+
+    addSection("Headline", profile.headline);
+    addSection("Location", profile.location);
+    addSection("About", profile.bio);
+    addSection("Skills", profile.skills?.join(", "));
+
+    if (profile.education?.length) {
+      addSection(
+        "Education",
+        profile.education
+          .map(
+            (item) =>
+              `${item.school} - ${item.degree} in ${item.fieldOfStudy}${
+                item.grade ? ` (${item.grade})` : ""
+              }`,
+          )
+          .join("\n"),
+      );
+    }
+
+    if (profile.experience?.length) {
+      addSection(
+        "Experience",
+        profile.experience
+          .map(
+            (item) =>
+              `${item.position} at ${item.company}${
+                item.location ? ` - ${item.location}` : ""
+              }\n${item.description || ""}`,
+          )
+          .join("\n\n"),
+      );
+    }
+
+    addSection(
+      "Links",
+      [profile.github, profile.linkedin, profile.website]
+        .filter(Boolean)
+        .join("\n"),
+    );
+
+    doc.end();
+  } catch (error) {
+    console.error("downloadResume error:", error);
+    return res.status(500).json({ message: "Error generating resume" });
+  }
 };
 
 export const sendConnectionRequest = async (req, res) => {

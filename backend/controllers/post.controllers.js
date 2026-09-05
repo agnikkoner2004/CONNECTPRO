@@ -33,7 +33,8 @@ export const createPost = async (req, res) => {
 
 export const getAllPosts = async (req, res) => {
   try {
-    const posts = await Post.find()
+    const filter = req.query.userId ? { userId: req.query.userId } : {};
+    const posts = await Post.find(filter)
       .populate("userId", "name userName email profilePicture")
       .sort({ createdAt: -1 });
 

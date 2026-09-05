@@ -2,10 +2,14 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
+import { createServer } from "http";
+import { Server } from "socket.io";
 import postRoutes from "./routes/posts.routes.js";
 import userRoutes from "./routes/user.routes.js";
 import messageRoutes from "./routes/message.routes.js";
-import { register } from "./controllers/user.controllers.js";
+import jobRoutes from "./routes/job.routes.js";
+import applicationRoutes from "./routes/application.routes.js";
+import { registerMessageSocket } from "./socket/message.socket.js";
 
 dotenv.config();
 
@@ -23,6 +27,8 @@ app.get("/", (req, res) => {
 app.use("/posts", postRoutes); // e.g. GET http://localhost:5000/posts
 app.use("/users", userRoutes); // e.g. POST http://localhost:5000/users/register
 app.use("/messages", messageRoutes); // e.g. POST http://localhost:5000/messages/send
+app.use("/jobs", jobRoutes); // e.g. POST http://localhost:5000/jobs/create
+app.use("/applications", applicationRoutes);
 
 // Support some common incorrect paths to avoid 'connection refused' by mistake
 // Redirect malformed or misspelled registration requests to the correct route
@@ -47,11 +53,21 @@ const startServer = async () => {
       : 5000;
 
     const startListening = (port) => {
-      const server = app.listen(port, () => {
+      const httpServer = createServer(app);
+      const io = new Server(httpServer, {
+        cors: {
+          origin: true,
+          credentials: true,
+        },
+      });
+
+      registerMessageSocket(io);
+
+      httpServer.listen(port, () => {
         console.log(`🚀 Server is running on port ${port}`);
       });
 
-      server.on("error", (err) => {
+      httpServer.on("error", (err) => {
         if (err.code === "EADDRINUSE") {
           console.warn(`⚠️ Port ${port} in use, trying port ${port + 1}`);
           startListening(port + 1);
